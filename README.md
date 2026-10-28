@@ -9,6 +9,10 @@ A Jellyfin plugin that gives users a default home screen library order instead o
 - Apply it to existing users: only those still on the alphabetical default, or everyone (opt-in checkbox), after a confirmation listing the affected users
 - Check out my other plugins: [JellyRate](https://github.com/trecoool/jellyrate), [JellyRequest](https://github.com/trecoool/jellyrequest) and [JellyPrecache](https://github.com/trecoool/jellyprecache).
 
+## Screenshots
+
+![Plugin settings: library order and apply to existing users](Screenshots/settings.png)
+
 ## Requirements
 
 - Jellyfin 12.3.x
