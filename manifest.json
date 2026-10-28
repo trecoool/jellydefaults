@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "37c415cb-696c-4632-9857-2f1642dd3261",
+    "name": "JellyDefaults",
+    "description": "Default home screen library order for users.",
+    "overview": "Define the home library order once; new users get it automatically, existing users on request.",
+    "owner": "trecoool",
+    "category": "General",
+    "versions": []
+  }
+]

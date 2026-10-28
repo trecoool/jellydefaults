@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JellyDefaults</title>
+</head>
+<body>
+    <div id="JellyDefaultsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+         data-require="emby-button,emby-checkbox">
+        <style>
+            .jd-row { display: flex; align-items: center; gap: .5em; padding: .4em .6em; border-radius: .3em; background: rgba(255,255,255,.04); margin-bottom: .3em; }
+            .jd-row .jd-name { flex: 1; }
+            .jd-row .jd-new { font-size: .8em; opacity: .7; font-style: italic; }
+            .jd-row button { min-width: 2.4em; padding: .2em .5em; margin: 0; }
+            .jd-row label { display: flex; align-items: center; gap: .3em; font-size: .9em; opacity: .85; }
+            .jd-dialog { background: #202020; color: inherit; border: 1px solid rgba(255,255,255,.15); border-radius: .5em; max-width: 32em; padding: 1.5em; }
+            .jd-dialog::backdrop { background: rgba(0,0,0,.6); }
+            .jd-dialog ul { max-height: 18em; overflow-y: auto; columns: 2; font-size: .9em; }
+            .jd-dialog .jd-actions { display: flex; gap: .5em; justify-content: flex-end; margin-top: 1em; }
+        </style>
+        <div data-role="content">
+            <div class="content-primary">
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Default library order</h2>
+                    <p class="fieldDescription">Home screen order applied to every new user. "Hide" removes the view from the My Media row.</p>
+                    <div id="jdList"></div>
+                    <button is="emby-button" id="jdSave" type="button" class="raised button-submit block emby-button">
+                        <span>Save</span>
+                    </button>
+                </div>
+
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Apply to existing users</h2>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="jdIncludeCustomized" type="checkbox" is="emby-checkbox" />
+                            <span>Include people who already reorganized</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Off: only users still on the alphabetical default.</div>
+                    </div>
+                    <button is="emby-button" id="jdApply" type="button" class="raised block emby-button">
+                        <span>Apply…</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <dialog id="jdConfirm" class="jd-dialog">
+            <h3 id="jdConfirmTitle"></h3>
+            <ul id="jdConfirmUsers"></ul>
+            <div class="jd-actions">
+                <button is="emby-button" type="button" id="jdConfirmCancel" class="raised emby-button"><span>Cancel</span></button>
+                <button is="emby-button" type="button" id="jdConfirmOk" class="raised button-submit emby-button"><span>Apply</span></button>
+            </div>
+        </dialog>
+
+        <script type="text/javascript">
+            (function () {
+                var pluginId = '37c415cb-696c-4632-9857-2f1642dd3261';
+                var page = document.querySelector('#JellyDefaultsConfigPage');
+                var listEl = page.querySelector('#jdList');
+                var dialog = page.querySelector('#jdConfirm');
+                // Rows in display order: { id, name, hidden, isNew }
+                var rows = [];
+
+                function render() {
+                    listEl.innerHTML = '';
+                    rows.forEach(function (row, i) {
+                        var el = document.createElement('div');
+                        el.className = 'jd-row';
+                        el.innerHTML =
+                            '<button is="emby-button" type="button" class="emby-button" data-move="-1">↑</button>' +
+                            '<button is="emby-button" type="button" class="emby-button" data-move="1">↓</button>' +
+                            '<span class="jd-name"></span>' +
+                            (row.isNew ? '<span class="jd-new">not in template</span>' : '') +
+                            '<label><input type="checkbox"' + (row.hidden ? ' checked' : '') + '> Hide</label>';
+                        el.querySelector('.jd-name').textContent = row.name;
+                        el.querySelector('[data-move="-1"]').disabled = i === 0;
+                        el.querySelector('[data-move="1"]').disabled = i === rows.length - 1;
+                        el.querySelectorAll('[data-move]').forEach(function (btn) {
+                            btn.addEventListener('click', function () {
+                                var j = i + parseInt(btn.dataset.move, 10);
+                                rows.splice(j, 0, rows.splice(i, 1)[0]);
+                                render();
+                            });
+                        });
+                        el.querySelector('input').addEventListener('change', function (e) { row.hidden = e.target.checked; });
+                        listEl.appendChild(el);
+                    });
+                }
+
+                // Template views first, in saved order, then views the template doesn't know yet.
+                function load() {
+                    Dashboard.showLoadingMsg();
+                    Promise.all([
+                        ApiClient.getPluginConfiguration(pluginId),
+                        ApiClient.getJSON(ApiClient.getUrl('JellyDefaults/Views'))
+                    ]).then(function (res) {
+                        var config = res[0], views = res[1];
+                        var byId = {};
+                        views.forEach(function (v) { byId[v.Id.replace(/-/g, '')] = v; });
+                        var norm = function (id) { return id.replace(/-/g, ''); };
+                        var excludes = config.MyMediaExcludes.map(norm);
+                        var ordered = config.OrderedViews.map(norm).filter(function (id) { return byId[id]; });
+                        rows = ordered.map(function (id) {
+                            return { id: id, name: byId[id].Name, hidden: excludes.indexOf(id) >= 0, isNew: false };
+                        });
+                        Object.keys(byId).forEach(function (id) {
+                            if (ordered.indexOf(id) < 0) rows.push({ id: id, name: byId[id].Name, hidden: excludes.indexOf(id) >= 0, isNew: true });
+                        });
+                        render();
+                        Dashboard.hideLoadingMsg();
+                    });
+                }
+
+                function save() {
+                    return ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.OrderedViews = rows.map(function (r) { return r.id; });
+                        config.MyMediaExcludes = rows.filter(function (r) { return r.hidden; }).map(function (r) { return r.id; });
+                        return ApiClient.updatePluginConfiguration(pluginId, config);
+                    }).then(function () {
+                        rows.forEach(function (r) { r.isNew = false; });
+                        render();
+                    });
+                }
+
+                function apply(dryRun) {
+                    return ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('JellyDefaults/Apply', {
+                            includeCustomized: page.querySelector('#jdIncludeCustomized').checked,
+                            dryRun: dryRun
+                        }),
+                        dataType: 'json'
+                    });
+                }
+
+                page.querySelector('#jdSave').addEventListener('click', function () {
+                    Dashboard.showLoadingMsg();
+                    save().then(function () {
+                        Dashboard.processPluginConfigurationUpdateResult();
+                    });
+                });
+
+                // Saves first so the applied template is what's on screen, then confirms with the user list.
+                page.querySelector('#jdApply').addEventListener('click', function () {
+                    Dashboard.showLoadingMsg();
+                    save().then(function () { return apply(true); }).then(function (users) {
+                        Dashboard.hideLoadingMsg();
+                        var include = page.querySelector('#jdIncludeCustomized').checked;
+                        page.querySelector('#jdConfirmTitle').textContent = users.length
+                            ? 'Overwrite library order for ' + users.length + ' user(s)' + (include ? ', including custom orders?' : '?')
+                            : 'No user to update.';
+                        var ul = page.querySelector('#jdConfirmUsers');
+                        ul.innerHTML = '';
+                        users.forEach(function (name) {
+                            var li = document.createElement('li');
+                            li.textContent = name;
+                            ul.appendChild(li);
+                        });
+                        page.querySelector('#jdConfirmOk').hidden = !users.length;
+                        dialog.showModal();
+                    });
+                });
+
+                page.querySelector('#jdConfirmCancel').addEventListener('click', function () { dialog.close(); });
+                page.querySelector('#jdConfirmOk').addEventListener('click', function () {
+                    dialog.close();
+                    Dashboard.showLoadingMsg();
+                    apply(false).then(function (users) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Applied to ' + users.length + ' user(s).');
+                    });
+                });
+
+                page.addEventListener('pageshow', load);
+            })();
+        </script>
+    </div>
+</body>
+</html>
