@@ -12,6 +12,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection services, IServerApplicationHost appHost)
     {
         services.AddSingleton<DefaultsApplier>();
+        services.AddScoped<SortDefaultsApplier>();
         services.AddScoped<IEventConsumer<UserCreatedEventArgs>, UserCreatedConsumer>();
     }
 }

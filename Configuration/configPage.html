@@ -5,13 +5,19 @@
 </head>
 <body>
     <div id="JellyDefaultsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
-         data-require="emby-button,emby-checkbox">
+         data-require="emby-button,emby-checkbox,emby-select">
         <style>
             .jd-row { display: flex; align-items: center; gap: .5em; padding: .4em .6em; border-radius: .3em; background: rgba(255,255,255,.04); margin-bottom: .3em; }
             .jd-row .jd-name { flex: 1; }
             .jd-row .jd-new { font-size: .8em; opacity: .7; font-style: italic; }
+            .jd-row .jd-sort { flex: 1; opacity: .85; }
             .jd-row button { min-width: 2.4em; padding: .2em .5em; margin: 0; }
             .jd-row label { display: flex; align-items: center; gap: .3em; font-size: .9em; opacity: .85; }
+            .jd-import { display: flex; align-items: center; gap: .5em; margin-bottom: 1em; }
+            .jd-import .selectContainer { flex: 1; margin: 0; }
+            .jd-import button { margin: 0; }
+            .jd-empty { opacity: .6; font-style: italic; padding: .4em .6em; }
+            .jd-apply { margin-top: 1.5em; }
             .jd-dialog { background: #202020; color: inherit; border: 1px solid rgba(255,255,255,.15); border-radius: .5em; max-width: 32em; padding: 1.5em; }
             .jd-dialog::backdrop { background: rgba(0,0,0,.6); }
             .jd-dialog ul { max-height: 18em; overflow-y: auto; columns: 2; font-size: .9em; }
@@ -19,28 +25,62 @@
         </style>
         <div data-role="content">
             <div class="content-primary">
+                <form id="jdForm">
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="ShowInAdminMenu" type="checkbox" is="emby-checkbox" />
+                        <span>Show in admin sidebar menu (requires restart)</span>
+                    </label>
+                </div>
+
                 <div class="verticalSection">
                     <h2 class="sectionTitle">Default library order</h2>
                     <p class="fieldDescription">Home screen order applied to every new user. "Hide" removes the view from the My Media row.</p>
                     <div id="jdList"></div>
-                    <button is="emby-button" id="jdSave" type="button" class="raised button-submit block emby-button">
+                    <button is="emby-button" type="button" class="raised button-submit block emby-button jd-save">
                         <span>Save</span>
                     </button>
+                    <div class="jd-apply">
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="jdIncludeCustomized" type="checkbox" is="emby-checkbox" />
+                                <span>Include people who already reorganized</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Off: only users still on the alphabetical default.</div>
+                        </div>
+                        <button is="emby-button" type="button" class="raised block emby-button" data-apply="order">
+                            <span>Apply to existing users…</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="verticalSection">
-                    <h2 class="sectionTitle">Apply to existing users</h2>
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="jdIncludeCustomized" type="checkbox" is="emby-checkbox" />
-                            <span>Include people who already reorganized</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">Off: only users still on the alphabetical default.</div>
+                    <h2 class="sectionTitle">Default library sorting</h2>
+                    <p class="fieldDescription">Sort of each library's main tab, applied to every new user. Imported from a user's current sorts (only the ones changed from Jellyfin's default). Web-based clients only (browser, desktop and phone apps), not TV apps.</p>
+                    <div class="jd-import">
+                        <div class="selectContainer">
+                            <select is="emby-select" id="jdSortUser" label="Import from"></select>
+                        </div>
+                        <button is="emby-button" id="jdSortImport" type="button" class="raised emby-button"><span>Import</span></button>
                     </div>
-                    <button is="emby-button" id="jdApply" type="button" class="raised block emby-button">
-                        <span>Apply…</span>
+                    <div id="jdSortList"></div>
+                    <button is="emby-button" type="button" class="raised button-submit block emby-button jd-save">
+                        <span>Save</span>
                     </button>
+                    <div class="jd-apply">
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="jdSortIncludeCustomized" type="checkbox" is="emby-checkbox" />
+                                <span>Include people who already changed a sort</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Off: each library is only set for users still on its default sort.</div>
+                        </div>
+                        <button is="emby-button" type="button" class="raised block emby-button" data-apply="sort">
+                            <span>Apply to existing users…</span>
+                        </button>
+                    </div>
                 </div>
+                </form>
             </div>
         </div>
 
@@ -58,9 +98,23 @@
                 var pluginId = '37c415cb-696c-4632-9857-2f1642dd3261';
                 var page = document.querySelector('#JellyDefaultsConfigPage');
                 var listEl = page.querySelector('#jdList');
+                var sortListEl = page.querySelector('#jdSortList');
                 var dialog = page.querySelector('#jdConfirm');
+                var APPLY = {
+                    order: { url: 'JellyDefaults/Apply', check: '#jdIncludeCustomized', noun: 'library order', custom: 'custom orders' },
+                    sort: { url: 'JellyDefaults/ApplySorts', check: '#jdSortIncludeCustomized', noun: 'library sorts (tabs changed per user)', custom: 'custom sorts' }
+                };
+                var TABS = { movies: 'Movies', series: 'Shows', musicalbums: 'Albums', Folder: 'Folders' };
+                var FIELDS = { SortName: 'Name', DateCreated: 'Date added', PremiereDate: 'Release date', ProductionYear: 'Year',
+                    CommunityRating: 'Rating', CriticRating: 'Critic rating', DatePlayed: 'Date played', Runtime: 'Runtime',
+                    PlayCount: 'Play count', OfficialRating: 'Parental rating', Random: 'Random', DateLastContentAdded: 'Date episode added' };
+                var norm = function (id) { return id.replace(/-/g, ''); };
                 // Rows in display order: { id, name, hidden, isNew }
                 var rows = [];
+                // Sort template rows: SortDefault objects as stored in config
+                var sortRows = [];
+                var viewsById = {};
+                var pendingApply = null;
 
                 function render() {
                     listEl.innerHTML = '';
@@ -88,26 +142,59 @@
                     });
                 }
 
+                function renderSorts() {
+                    sortListEl.innerHTML = sortRows.length ? '' : '<div class="jd-empty">No sort in template: import one.</div>';
+                    sortRows.forEach(function (s, i) {
+                        var view = viewsById[norm(s.LibraryId)];
+                        var el = document.createElement('div');
+                        el.className = 'jd-row';
+                        el.innerHTML = '<span class="jd-name"></span><span class="jd-sort"></span>' +
+                            '<button is="emby-button" type="button" class="emby-button" title="Remove">✕</button>';
+                        el.querySelector('.jd-name').textContent = (view ? view.Name : norm(s.LibraryId)) + ' · ' + (TABS[s.Tab] || s.Tab);
+                        el.querySelector('.jd-sort').textContent = (FIELDS[s.SortBy.split(',')[0]] || s.SortBy) + ', ' +
+                            (s.SortOrder === 'Descending' ? 'descending' : 'ascending');
+                        el.querySelector('button').addEventListener('click', function () {
+                            sortRows.splice(i, 1);
+                            renderSorts();
+                        });
+                        sortListEl.appendChild(el);
+                    });
+                }
+
                 // Template views first, in saved order, then views the template doesn't know yet.
                 function load() {
                     Dashboard.showLoadingMsg();
                     Promise.all([
                         ApiClient.getPluginConfiguration(pluginId),
-                        ApiClient.getJSON(ApiClient.getUrl('JellyDefaults/Views'))
+                        ApiClient.getJSON(ApiClient.getUrl('JellyDefaults/Views')),
+                        ApiClient.getUsers()
                     ]).then(function (res) {
-                        var config = res[0], views = res[1];
-                        var byId = {};
-                        views.forEach(function (v) { byId[v.Id.replace(/-/g, '')] = v; });
-                        var norm = function (id) { return id.replace(/-/g, ''); };
+                        var config = res[0], views = res[1], users = res[2];
+                        viewsById = {};
+                        views.forEach(function (v) { viewsById[norm(v.Id)] = v; });
                         var excludes = config.MyMediaExcludes.map(norm);
-                        var ordered = config.OrderedViews.map(norm).filter(function (id) { return byId[id]; });
+                        var ordered = config.OrderedViews.map(norm).filter(function (id) { return viewsById[id]; });
                         rows = ordered.map(function (id) {
-                            return { id: id, name: byId[id].Name, hidden: excludes.indexOf(id) >= 0, isNew: false };
+                            return { id: id, name: viewsById[id].Name, hidden: excludes.indexOf(id) >= 0, isNew: false };
                         });
-                        Object.keys(byId).forEach(function (id) {
-                            if (ordered.indexOf(id) < 0) rows.push({ id: id, name: byId[id].Name, hidden: excludes.indexOf(id) >= 0, isNew: true });
+                        Object.keys(viewsById).forEach(function (id) {
+                            if (ordered.indexOf(id) < 0) rows.push({ id: id, name: viewsById[id].Name, hidden: excludes.indexOf(id) >= 0, isNew: true });
                         });
+                        sortRows = config.Sorts || [];
+                        page.querySelector('#ShowInAdminMenu').checked = config.ShowInAdminMenu;
+
+                        var select = page.querySelector('#jdSortUser');
+                        select.innerHTML = '';
+                        users.forEach(function (u) {
+                            var opt = document.createElement('option');
+                            opt.value = u.Id;
+                            opt.textContent = u.Name;
+                            select.appendChild(opt);
+                        });
+                        select.value = ApiClient.getCurrentUserId();
+
                         render();
+                        renderSorts();
                         Dashboard.hideLoadingMsg();
                     });
                 }
@@ -116,6 +203,8 @@
                     return ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                         config.OrderedViews = rows.map(function (r) { return r.id; });
                         config.MyMediaExcludes = rows.filter(function (r) { return r.hidden; }).map(function (r) { return r.id; });
+                        config.Sorts = sortRows;
+                        config.ShowInAdminMenu = page.querySelector('#ShowInAdminMenu').checked;
                         return ApiClient.updatePluginConfiguration(pluginId, config);
                     }).then(function () {
                         rows.forEach(function (r) { r.isNew = false; });
@@ -123,42 +212,63 @@
                     });
                 }
 
-                function apply(dryRun) {
+                function apply(kind, dryRun) {
                     return ApiClient.ajax({
                         type: 'POST',
-                        url: ApiClient.getUrl('JellyDefaults/Apply', {
-                            includeCustomized: page.querySelector('#jdIncludeCustomized').checked,
+                        url: ApiClient.getUrl(APPLY[kind].url, {
+                            includeCustomized: page.querySelector(APPLY[kind].check).checked,
                             dryRun: dryRun
                         }),
                         dataType: 'json'
                     });
                 }
 
-                page.querySelector('#jdSave').addEventListener('click', function () {
+                page.querySelectorAll('.jd-save').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        Dashboard.showLoadingMsg();
+                        save().then(function () {
+                            Dashboard.processPluginConfigurationUpdateResult();
+                        });
+                    });
+                });
+
+                // Replaces the sort template on screen; persisted on Save or Apply.
+                page.querySelector('#jdSortImport').addEventListener('click', function () {
                     Dashboard.showLoadingMsg();
-                    save().then(function () {
-                        Dashboard.processPluginConfigurationUpdateResult();
+                    var userId = page.querySelector('#jdSortUser').value;
+                    ApiClient.getJSON(ApiClient.getUrl('JellyDefaults/Sorts', { userId: userId })).then(function (sorts) {
+                        sortRows = sorts;
+                        renderSorts();
+                        Dashboard.hideLoadingMsg();
                     });
                 });
 
                 // Saves first so the applied template is what's on screen, then confirms with the user list.
-                page.querySelector('#jdApply').addEventListener('click', function () {
-                    Dashboard.showLoadingMsg();
-                    save().then(function () { return apply(true); }).then(function (users) {
-                        Dashboard.hideLoadingMsg();
-                        var include = page.querySelector('#jdIncludeCustomized').checked;
-                        page.querySelector('#jdConfirmTitle').textContent = users.length
-                            ? 'Overwrite library order for ' + users.length + ' user(s)' + (include ? ', including custom orders?' : '?')
-                            : 'No user to update.';
-                        var ul = page.querySelector('#jdConfirmUsers');
-                        ul.innerHTML = '';
-                        users.forEach(function (name) {
-                            var li = document.createElement('li');
-                            li.textContent = name;
-                            ul.appendChild(li);
+                page.querySelectorAll('[data-apply]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        var kind = btn.dataset.apply;
+                        Dashboard.showLoadingMsg();
+                        save().then(function () { return apply(kind, true); }).then(function (users) {
+                            Dashboard.hideLoadingMsg();
+                            pendingApply = kind;
+                            var include = page.querySelector(APPLY[kind].check).checked;
+                            page.querySelector('#jdConfirmTitle').textContent = users.length
+                                ? 'Overwrite ' + APPLY[kind].noun + ' for ' + users.length + ' user(s)' + (include ? ', including ' + APPLY[kind].custom + '?' : '?')
+                                : 'No user to update.';
+                            var ul = page.querySelector('#jdConfirmUsers');
+                            ul.innerHTML = '';
+                            // Order targets are names; sort targets carry their changed tab count.
+                            users.forEach(function (u) {
+                                var li = document.createElement('li');
+                                li.textContent = typeof u === 'string' ? u : u.Name + ' (' + u.Tabs + ')';
+                                ul.appendChild(li);
+                            });
+                            page.querySelector('#jdConfirmOk').hidden = !users.length;
+                            dialog.showModal();
+                        }, function () {
+                            Dashboard.hideLoadingMsg();
+                            Dashboard.alert('Template is empty: nothing to apply.');
                         });
-                        page.querySelector('#jdConfirmOk').hidden = !users.length;
-                        dialog.showModal();
                     });
                 });
 
@@ -166,11 +276,14 @@
                 page.querySelector('#jdConfirmOk').addEventListener('click', function () {
                     dialog.close();
                     Dashboard.showLoadingMsg();
-                    apply(false).then(function (users) {
+                    apply(pendingApply, false).then(function (users) {
                         Dashboard.hideLoadingMsg();
                         Dashboard.alert('Applied to ' + users.length + ' user(s).');
                     });
                 });
+
+                // Form only for jellyfin-web's width cap; buttons drive everything.
+                page.querySelector('#jdForm').addEventListener('submit', function (e) { e.preventDefault(); });
 
                 page.addEventListener('pageshow', load);
             })();
