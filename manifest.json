@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "- Default library sorting: sort of each library's main tab, imported from a user, applied to new users and to existing users still on the default sort (per library)\n- Optional admin sidebar entry\n- Narrower settings page",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/trecoool/jellydefaults/releases/download/v1.1.0.0/jellydefaults_1.1.0.0.zip",
+        "checksum": "2884cf9fb5dbe4bc631d29443c6543d2",
+        "timestamp": "2026-11-01T00:43:26Z"
+      },
+      {
         "version": "1.0.0.0",
         "changelog": "Initial release.",
         "targetAbi": "12.3.0.0",
